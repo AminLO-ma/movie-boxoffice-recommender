@@ -21,6 +21,7 @@ python -m venv .venv
 |---|---|
 | `src/boxoffice/ingestion/` | collecte : MovieLens, TMDB (cache JSON), IMDb |
 | `src/boxoffice/cleaning/` | nettoyage, fusion, référentiel commun |
+| `src/boxoffice/features/` | tableaux d'analyse : modèle de succès, segmentation des spectateurs |
 | `notebooks/` | exploration et restitution |
 
 ## 2. Récupérer les données
@@ -50,6 +51,8 @@ python -m boxoffice.cleaning.reference
 |---|---|---|
 | `data/processed/films_reference.parquet` (+ `.csv`) | 1 ligne par film retenu : identifiants, nombre de notes, titres, années, statut TMDB, type IMDb, `in_common_list`, signalements `flag_*` | `movieId` |
 | `data/processed/films_funnel.csv` | effectifs à chaque étape de la sélection | — |
+| `data/processed/profils_spectateurs.parquet` | 1 ligne par spectateur : part de chaque genre dans ses films aimés | `userId` |
+| `data/processed/segments_spectateurs.parquet` | idem + colonne `segment` (k-means, k = 5) | `userId` |
 | `data/raw/movielens/ml-32m/` | notes, films, tags, liens | `movieId` |
 | `data/raw/tmdb/movies/{tmdbId}.json` | réponse TMDB brute : détails, `credits`, `release_dates`, `keywords` | `tmdbId` |
 | `data/raw/tmdb/movies/_not_found.jsonl` | films inconnus de TMDB (404) | `tmdb_id` |
