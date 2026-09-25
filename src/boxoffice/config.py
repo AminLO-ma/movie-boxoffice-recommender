@@ -11,9 +11,11 @@ DATA = ROOT / "data"
 RAW = DATA / "raw"
 INTERIM = DATA / "interim"
 PROCESSED = DATA / "processed"
+MODELS = ROOT / "models"
 
 MOVIELENS_VARIANT = "ml-32m"
 MOVIELENS_DIR = RAW / "movielens" / MOVIELENS_VARIANT
+MOVIELENS_RATINGS = MOVIELENS_DIR / "ratings.csv"
 MIN_RATINGS = 10
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
@@ -33,8 +35,20 @@ IMDB_URL = "https://datasets.imdbws.com"
 IMDB_RAW = RAW / "imdb"
 IMDB_TABLE = INTERIM / "imdb_titles.parquet"
 
+CPI_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCSL"
+CPI_RAW = RAW / "cpi" / "cpiaucsl.csv"
+CPI_REFERENCE_YEAR = 2023
+
 FILM_REFERENCE = PROCESSED / "films_reference.parquet"
 FILM_FUNNEL = PROCESSED / "films_funnel.csv"
+MOVIES_TABLE = PROCESSED / "movies.parquet"
+GENRES_TABLE = PROCESSED / "movie_genres.parquet"
+PEOPLE_TABLE = PROCESSED / "movie_people.parquet"
+CERTIFICATIONS_TABLE = PROCESSED / "movie_certifications.parquet"
+KEYWORDS_TABLE = PROCESSED / "movie_keywords.parquet"
+SUCCESS_DATASET = PROCESSED / "succes_dataset.parquet"
+USER_PROFILES = PROCESSED / "profils_spectateurs.parquet"
+USER_SEGMENTS = PROCESSED / "segments_spectateurs.parquet"
 
 
 def tmdb_api_key() -> str:
