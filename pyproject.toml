@@ -19,6 +19,7 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "plotly",
+    "streamlit",
 ]
 
 [tool.setuptools.packages.find]

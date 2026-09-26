@@ -63,7 +63,16 @@ python -m boxoffice.cleaning.reference
 
 Les données ne vont jamais sur GitHub (volume, licences IMDb et TMDB) ; la clé API reste dans `.env`.
 
-## 4. Travailler à plusieurs (Git)
+## 4. Tableau de bord métier
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
+L'application s'ouvre dans le navigateur. Elle charge le modèle enregistré dans `models/` et les tables
+de `data/processed/` : aucune clé API n'est nécessaire.
+
+## 5. Travailler à plusieurs (Git)
 
 - `main` : version stable ; `develop` : intégration. Pas de push direct sur l'une ou l'autre.
 - Une branche par fonctionnalité, créée depuis `develop`, supprimée après fusion :
