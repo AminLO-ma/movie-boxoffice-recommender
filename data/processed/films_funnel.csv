@@ -1,0 +1,9 @@
+etape,films
+Films MovieLens,87585
+Notés au moins une fois,84432
+Notés au moins 10 fois,31961
+... avec un tmdbId,31931
+... trouvés par TMDB,31476
+... et retrouvés dans IMDb = liste commune,31464
+dont films de cinéma (type IMDb movie),28057
+dont cinéma avec budget et recettes renseignés,9524

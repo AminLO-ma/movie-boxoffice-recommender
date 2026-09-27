@@ -9,10 +9,28 @@ env/
 # Data & Models (ne jamais push les gros fichiers)
 data/*
 !data/.gitkeep
+dist/
 *.csv
 *.parquet
 *.pkl
 *.joblib
+*.log
+
+# Exceptions : tables légères et modèle entraîné, pour rejouer les notebooks (dépôt privé)
+!data/processed/
+!data/interim/
+!data/processed/films_reference.parquet
+!data/processed/films_funnel.csv
+!data/processed/movies.parquet
+!data/processed/movie_genres.parquet
+!data/processed/movie_people.parquet
+!data/processed/movie_certifications.parquet
+!data/processed/movie_keywords.parquet
+!data/processed/succes_dataset.parquet
+!data/interim/imdb_titles.parquet
+!data/interim/ml-32m_rating_counts.parquet
+!models/succes_classification.joblib
+!models/succes_classification.json
 
 # Jupyter
 .ipynb_checkpoints/
