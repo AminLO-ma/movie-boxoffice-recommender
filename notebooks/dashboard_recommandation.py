@@ -116,6 +116,57 @@ def show_movie_grid(df, columns=5):
 
 
 # ----------------------------------------------------------------------------
+# Noms sympas pour les clusters, basés sur leur genre dominant (lift le plus
+# élevé dans cluster_genre_profile). En cas d'ex-aequo entre deux clusters,
+# on retombe sur le genre suivant pour départager.
+# ----------------------------------------------------------------------------
+
+GENRE_NICKNAMES = {
+    "Action": "Les amateurs d'action",
+    "Adventure": "Les aventuriers",
+    "Animation": "Les grands enfants",
+    "Children": "Les habitués des films en famille",
+    "Comedy": "Les rigolos",
+    "Crime": "Les enquêteurs",
+    "Documentary": "Les curieux du réel",
+    "Drama": "Les amateurs de drames",
+    "Fantasy": "Les rêveurs",
+    "Film-Noir": "Les adorateurs de films noirs",
+    "Horror": "Les amateurs de frissons",
+    "IMAX": "Les amateurs de grand spectacle",
+    "Musical": "Les mélomanes",
+    "Mystery": "Les limiers",
+    "Romance": "Les romantiques",
+    "Sci-Fi": "Les explorateurs de science-fiction",
+    "Thriller": "Les amateurs de suspense",
+    "War": "Les stratèges de guerre",
+    "Western": "Les cow-boys",
+    "(no genres listed)": "Les ovnis cinématographiques",
+}
+
+
+def build_cluster_names(genre_profile):
+    """Associe à chaque cluster un nom sympa basé sur son genre dominant
+    (le plus sur-représenté). Départage les ex-aequo en essayant le genre
+    suivant du classement, avant de se rabattre sur un suffixe numéroté."""
+    names = {}
+    used = set()
+    for cid in genre_profile.index:
+        ranked_genres = genre_profile.loc[cid].sort_values(ascending=False).index.tolist()
+        name = None
+        for genre in ranked_genres:
+            candidate = GENRE_NICKNAMES.get(genre, f"Les fans de {genre}")
+            if candidate not in used:
+                name = candidate
+                break
+        if name is None:
+            name = f"{GENRE_NICKNAMES.get(ranked_genres[0], ranked_genres[0])} (bis)"
+        used.add(name)
+        names[cid] = name
+    return names
+
+
+# ----------------------------------------------------------------------------
 # Chargement des données et du modèle
 # ----------------------------------------------------------------------------
 
@@ -134,6 +185,12 @@ genre_profile = model["cluster_genre_profile"]
 cluster_stats = model["cluster_movie_stats"]
 user_clusters = model["user_clusters"]
 cluster_ids = sorted(genre_profile.index.tolist())
+cluster_names = build_cluster_names(genre_profile)
+
+
+def cluster_label(cid):
+    return f"{cluster_names[cid]} (cluster {cid})"
+
 
 with st.sidebar:
     st.header("Configuration")
@@ -161,7 +218,10 @@ with tab_user:
     cluster_id = get_user_cluster(model, user_id)
     if cluster_id is not None:
         cluster_size = (user_clusters["cluster"] == cluster_id).sum()
-        st.write(f"Cluster de l'utilisateur **{user_id}** : **{cluster_id}** ({cluster_size:,} utilisateurs)")
+        st.write(
+            f"Profil de l'utilisateur **{user_id}** : **{cluster_label(cluster_id)}** "
+            f"({cluster_size:,} utilisateurs)"
+        )
     else:
         st.write(f"Utilisateur **{user_id}** inconnu du modèle → repli sur la popularité globale.")
 
@@ -188,16 +248,16 @@ with tab_user:
 # ----------------------------------------------------------------------------
 
 with tab_cluster:
-    cid = st.selectbox("Cluster", cluster_ids, key="single_cluster")
+    cid = st.selectbox("Cluster", cluster_ids, format_func=cluster_label, key="single_cluster")
     size = (user_clusters["cluster"] == cid).sum()
-    st.write(f"Taille du cluster : **{size:,}** utilisateurs")
+    st.write(f"**{cluster_names[cid]}** — {size:,} utilisateurs")
 
     top_genres = genre_profile.loc[cid].sort_values(ascending=False).head(12)
     fig = px.bar(
         top_genres.iloc[::-1],
         orientation="h",
         labels={"value": "Sur-représentation (lift)", "index": "Genre"},
-        title=f"Genres sur-représentés — cluster {cid}",
+        title=f"Genres sur-représentés — {cluster_names[cid]}",
     )
     fig.add_vline(x=1, line_dash="dash", line_color="gray")
     st.plotly_chart(fig, use_container_width=True)
@@ -218,14 +278,22 @@ with tab_cluster:
 with tab_compare:
     col_a, col_b = st.columns(2)
     with col_a:
-        cid_a = st.selectbox("Cluster A", cluster_ids, index=0, key="cluster_a")
+        cid_a = st.selectbox(
+            "Cluster A", cluster_ids, index=0, format_func=cluster_label, key="cluster_a"
+        )
     with col_b:
         default_b_index = 1 if len(cluster_ids) > 1 else 0
-        cid_b = st.selectbox("Cluster B", cluster_ids, index=default_b_index, key="cluster_b")
+        cid_b = st.selectbox(
+            "Cluster B",
+            cluster_ids,
+            index=default_b_index,
+            format_func=cluster_label,
+            key="cluster_b",
+        )
 
     compare_df = genre_profile.loc[[cid_a, cid_b]].T.reset_index()
-    compare_df.columns = ["genre", f"Cluster {cid_a}", f"Cluster {cid_b}"]
-    compare_df = compare_df.sort_values(f"Cluster {cid_a}", ascending=False)
+    compare_df.columns = ["genre", cluster_names[cid_a], cluster_names[cid_b]]
+    compare_df = compare_df.sort_values(cluster_names[cid_a], ascending=False)
     compare_long = compare_df.melt(id_vars="genre", var_name="cluster", value_name="lift")
 
     fig = px.bar(
@@ -234,7 +302,7 @@ with tab_compare:
         y="lift",
         color="cluster",
         barmode="group",
-        title=f"Comparaison des genres — cluster {cid_a} vs cluster {cid_b}",
+        title=f"Comparaison des genres — {cluster_names[cid_a]} vs {cluster_names[cid_b]}",
     )
     fig.add_hline(y=1, line_dash="dash", line_color="gray")
     fig.update_layout(xaxis_tickangle=-45)
@@ -244,7 +312,7 @@ with tab_compare:
     col_a, col_b = st.columns(2)
     for col, cid in [(col_a, cid_a), (col_b, cid_b)]:
         with col:
-            st.markdown(f"**Cluster {cid}**")
+            st.markdown(f"**{cluster_names[cid]}**")
             top = (
                 cluster_stats[cluster_stats["cluster"] == cid]
                 .sort_values("distinctive_score", ascending=False)
