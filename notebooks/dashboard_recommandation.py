@@ -37,6 +37,11 @@ from test_model import (
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 TMDB_API_BASE = "https://api.themoviedb.org/3/movie"
 
+# Seuil de votes minimum pour qu'un film soit éligible comme "distinctif" d'un
+# cluster — même seuil que describe_clusters() dans le notebook (section 8),
+# pour que le dashboard et le notebook montrent la même liste de films.
+MIN_VOTES_CLUSTER_MOVIES = 1000
+
 st.set_page_config(page_title="MovieLens — Recommandations & Clusters", layout="wide")
 
 
@@ -264,7 +269,10 @@ with tab_cluster:
 
     st.subheader("Films les plus distinctifs du cluster")
     top_movies = (
-        cluster_stats[cluster_stats["cluster"] == cid]
+        cluster_stats[
+            (cluster_stats["cluster"] == cid)
+            & (cluster_stats["n_votes"] >= MIN_VOTES_CLUSTER_MOVIES)
+        ]
         .sort_values("distinctive_score", ascending=False)
         .head(15)
     )
@@ -314,7 +322,10 @@ with tab_compare:
         with col:
             st.markdown(f"**{cluster_names[cid]}**")
             top = (
-                cluster_stats[cluster_stats["cluster"] == cid]
+                cluster_stats[
+                    (cluster_stats["cluster"] == cid)
+                    & (cluster_stats["n_votes"] >= MIN_VOTES_CLUSTER_MOVIES)
+                ]
                 .sort_values("distinctive_score", ascending=False)
                 .head(8)
             )
