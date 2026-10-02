@@ -107,7 +107,8 @@ with droite:
 st.divider()
 
 st.header("Ce qui fait la différence")
-onglets = st.tabs(["Budget et saga", "Genres et budgets", "Calendrier", "Fiabilité de l'outil"])
+onglets = st.tabs(["Budget et saga", "Genres et budgets", "Calendrier", "Fiabilité de l'outil",
+                   "Erreurs par type de film"])
 
 with onglets[0]:
     courbes = entrainement.courbe_budget_saga(modele, data, jeu, genre=genre)
@@ -133,6 +134,23 @@ with onglets[3]:
     st.plotly_chart(metier.zones_decision(zones, taux_de_base), width="stretch")
     st.info("Testé sur 983 films récents que l'outil n'avait jamais vus. Il double les chances de succès "
             "sur la zone haute, et surtout il écarte 360 projets dont seuls 15 % étaient rentables.")
+
+with onglets[4]:
+    fiable = entrainement.fiabilite_par_genre(data, jeu, probabilites)
+    st.plotly_chart(metier.fiabilite_par_genre(fiable), width="stretch")
+    meilleur, pire = fiable.index[0], fiable.index[-1]
+    biaise = fiable["biais"].abs().idxmax()
+    sens = "surestime" if fiable.loc[biaise, "biais"] > 0 else "sous-estime"
+    st.info(
+        f"Le **{meilleur}** est le mieux prédit (Brier {fiable.loc[meilleur, 'Brier']:.2f}) : ses deux barres "
+        f"se superposent presque, donc ce que l'outil annonce correspond au taux réel. À l'inverse, le "
+        f"**{pire}** est le moins fiable (Brier {fiable.loc[pire, 'Brier']:.2f}). Le biais le plus marqué "
+        f"touche le **{biaise}**, que l'outil {sens} de {abs(fiable.loc[biaise, 'biais']):.0%}.")
+    st.plotly_chart(metier.residus_par_genre(entrainement.residus_par_genre(data, jeu, probabilites)),
+                    width="stretch")
+    st.info("Un résidu est l'écart entre la probabilité annoncée et l'issue réelle. Une boîte centrée "
+            "au-dessus de zéro signale une surestimation systématique ; plus la boîte est large, plus "
+            "les prédictions sont dispersées.")
 
 st.divider()
 

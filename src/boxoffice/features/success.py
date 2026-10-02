@@ -97,9 +97,16 @@ def build(avec_keywords: bool = False) -> pd.DataFrame:
 
 
 def charger(recalculer: bool = False, avec_keywords: bool = False) -> pd.DataFrame:
-    """Tableau d'entraînement, relu depuis data/processed ou reconstruit puis enregistré."""
-    if config.SUCCESS_DATASET.exists() and not recalculer:
-        return pd.read_parquet(config.SUCCESS_DATASET)
+    """Tableau d'entraînement, relu depuis data/processed (Parquet) ou reconstruit puis enregistré.
+
+    Repli sur le CSV quand le Parquet n'est pas disponible.
+    """
+    csv = config.SUCCESS_DATASET.with_suffix(".csv")
+    if not recalculer:
+        if config.SUCCESS_DATASET.exists():
+            return pd.read_parquet(config.SUCCESS_DATASET)
+        if csv.exists():
+            return pd.read_csv(csv)
     dataset = build(avec_keywords=avec_keywords)
     config.PROCESSED.mkdir(parents=True, exist_ok=True)
     dataset.to_parquet(config.SUCCESS_DATASET, index=False)

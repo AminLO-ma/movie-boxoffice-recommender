@@ -1,0 +1,19 @@
+{
+  "target": "log_roi",
+  "best_model": "LightGBM (tune)",
+  "best_params": {
+    "subsample": 0.8,
+    "num_leaves": 31,
+    "n_estimators": 500,
+    "max_depth": 4,
+    "learning_rate": 0.03,
+    "colsample_bytree": 0.6
+  },
+  "cv_r2": 0.2035641206144851,
+  "test_r2": 0.16478310205002655,
+  "test_rmse": 1.5802126612748282,
+  "test_mae": 1.1358369049619141,
+  "n_train": 7410,
+  "n_test": 1853,
+  "random_state": 42
+}

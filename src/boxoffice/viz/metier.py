@@ -59,6 +59,39 @@ def zones_decision(resume: pd.DataFrame, taux_de_base: float):
     return figure
 
 
+def fiabilite_par_genre(table: pd.DataFrame):
+    """Taux réel contre probabilité moyenne annoncée, par genre (trié du mieux prédit au moins bien)."""
+    ordre = table.sort_values("Brier", ascending=False).index.tolist()  # le mieux prédit en haut
+    etiquettes = {genre: f"{genre}  ·  Brier {table.loc[genre, 'Brier']:.2f}" for genre in table.index}
+    long = (table.reset_index()[["type de film", "films", "biais", "Brier", "taux réel", "probabilité moyenne"]]
+            .melt(id_vars=["type de film", "films", "biais", "Brier"],
+                  var_name="mesure", value_name="pourcentage"))
+    long["pourcentage"] *= 100
+    long["genre"] = long["type de film"].map(etiquettes)
+    figure = px.bar(long, x="pourcentage", y="genre", color="mesure", barmode="group", orientation="h",
+                    category_orders={"genre": [etiquettes[g] for g in ordre]},
+                    color_discrete_map={"taux réel": "#55A868", "probabilité moyenne": "#4C72B0"},
+                    hover_data={"films": True, "Brier": ":.3f", "biais": ":+.3f",
+                                "pourcentage": ":.0f", "genre": False, "mesure": False},
+                    labels={"pourcentage": "% de films rentables", "genre": "", "mesure": ""},
+                    title="Fiabilité par type de film : annoncé (bleu) contre réel (vert)")
+    figure.update_layout(height=620, legend={"orientation": "h", "y": -0.12})
+    return figure
+
+
+def residus_par_genre(table: pd.DataFrame):
+    """Distribution des résidus par genre : l'écart du trait médian à zéro est le biais systématique."""
+    ordre = table.groupby("type de film")["résidu"].mean().sort_values().index.tolist()
+    figure = px.box(table, x="résidu", y="type de film", color="type de film", points="all",
+                    category_orders={"type de film": ordre},
+                    labels={"résidu": "résidu = probabilité annoncée − issue réelle", "type de film": ""},
+                    title="Où le modèle se trompe : un résidu par film, par type")
+    figure.add_vline(x=0, line_dash="dash", line_color="black", annotation_text="erreur nulle")
+    figure.update_traces(marker={"size": 4, "opacity": 0.5})
+    figure.update_layout(height=620, showlegend=False)
+    return figure
+
+
 def courbe_budget_saga(courbes: pd.DataFrame, seuil_pourcent: float = 70):
     figure = px.line(courbes, x="budget", y="probabilité", color="type de film", markers=True,
                      color_discrete_map={"film isolé": "#C44E52", "suite ou univers existant": "#55A868"},
