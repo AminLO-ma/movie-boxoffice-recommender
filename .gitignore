@@ -19,3 +19,6 @@ data/*
 
 # Environnement / Clés API
 .env
+
+# 
+.vscode/

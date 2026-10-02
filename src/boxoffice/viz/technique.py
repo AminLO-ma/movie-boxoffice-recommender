@@ -223,3 +223,48 @@ def gain_seuil(arbitrage: pd.DataFrame, seuil_initial: float = 0.5, seuil_retenu
         axes[1].text(position, valeur + 3, f"{int(valeur)}", ha="center", fontweight="bold")
     plt.tight_layout()
     return fig
+
+
+def zones_decision(probabilites, reel, seuil_rejet: float = 0.3, seuil_recommandation: float = 0.7):
+    """Distribution des probabilités prédites, colorée par la réalité, avec les trois zones."""
+    reel = np.asarray(reel)
+    fig, axe = plt.subplots(figsize=(11, 5))
+    intervalles = np.linspace(0, 1, 26)
+    axe.hist([probabilites[reel == 0], probabilites[reel == 1]], bins=intervalles, stacked=True,
+             color=[ROUGE, VERT], label=["non rentable", "rentable"], edgecolor="white", linewidth=0.4)
+
+    bornes = [(0, seuil_rejet, "écarter", ROUGE), (seuil_rejet, seuil_recommandation, "examiner", ORANGE),
+              (seuil_recommandation, 1.0, "recommander", VERT)]
+    hauteur = axe.get_ylim()[1]
+    for debut, fin, nom, couleur in bornes:
+        dans_zone = (probabilites >= debut) & (probabilites < fin if fin < 1 else probabilites <= fin)
+        films, taux = int(dans_zone.sum()), reel[dans_zone].mean() * 100
+        axe.axvspan(debut, fin, color=couleur, alpha=0.08)
+        axe.text((debut + fin) / 2, hauteur * 0.97, nom.upper(), ha="center", va="top",
+                 fontweight="bold", color=couleur)
+        axe.text((debut + fin) / 2, hauteur * 0.88, f"{films} films\n{taux:.0f} % rentables",
+                 ha="center", va="top", color=couleur)
+
+    for seuil in (seuil_rejet, seuil_recommandation):
+        axe.axvline(seuil, color="black", linestyle="--", linewidth=1)
+    axe.set(xlabel="probabilité de rentabilité estimée par le modèle", ylabel="films",
+            title="Pourquoi une zone d'abstention : au milieu, le modèle ne tranche pas")
+    axe.legend(loc="upper right", bbox_to_anchor=(1, 0.75))
+    plt.tight_layout()
+    return fig
+
+
+def sensibilite_seuil(table: pd.DataFrame, seuil_retenu: float = 2.5):
+    """AUC obtenue selon le seuil de rentabilité choisi pour définir la cible."""
+    fig = plt.figure(figsize=(8, 4))
+    plt.plot(table.index, table["AUC test"], marker="o", color=BLEU)
+    plt.axvline(seuil_retenu, color=VERT, linestyle="--", label=f"seuil retenu : {seuil_retenu}")
+    plt.ylim(0.60, 0.85)
+    plt.xlabel("seuil de rentabilité retenu pour définir la cible (ROI)")
+    plt.ylabel("AUC en test")
+    plt.title("Le choix du seuil ne change pas ce que le modèle apprend")
+    for abscisse, valeur in zip(table.index, table["AUC test"]):
+        plt.text(abscisse, valeur + 0.012, f"{valeur:.3f}", ha="center")
+    plt.legend()
+    plt.tight_layout()
+    return fig
