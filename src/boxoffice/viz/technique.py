@@ -29,6 +29,31 @@ def distribution_cible(data: pd.DataFrame, seuil_roi: float = 2.5):
     return fig
 
 
+def seuil_rentabilite(resultat: pd.DataFrame, grille: pd.DataFrame, seuil_roi: float = 2.5):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), gridspec_kw={"width_ratios": [1.1, 1]})
+    valeurs = resultat["résultat du studio"]
+    etiquettes = [f"ROI {multiple:g}" for multiple in resultat.index]
+    axes[0].bar(etiquettes, valeurs, color=[VERT if v > 0 else GRIS if v == 0 else ROUGE for v in valeurs])
+    axes[0].axhline(0, color="black", linewidth=1)
+    budget = resultat["production"].iloc[0]
+    axes[0].set(ylabel="résultat du studio (M$)", ylim=(valeurs.min() - 25, valeurs.max() + 25),
+                title=f"Film à {budget:.0f} M$ : ce qu'il reste au studio après les salles")
+    for position, valeur in enumerate(valeurs):
+        axes[0].text(position, valeur + (4 if valeur >= 0 else -4),
+                     f"{valeur:+.0f} M$" if valeur else "0 : point mort",
+                     ha="center", va="bottom" if valeur >= 0 else "top", fontweight="bold")
+
+    sns.heatmap(grille, annot=True, fmt=".2f", cmap="YlOrRd", cbar=False, linewidths=1, ax=axes[1],
+                vmin=1, vmax=4, annot_kws={"fontsize": 13, "fontweight": "bold"})
+    axes[1].set(title="ROI à atteindre pour couvrir les coûts, selon les hypothèses")
+    axes[1].set_xticklabels([nom.replace(" = ", "\n").replace(" du budget", "\ndu budget") for nom in grille.columns],
+                            rotation=0, fontsize=9)
+    axes[1].set_yticklabels([nom.replace("le studio touche ", "studio : ").replace(" des recettes", "\ndes recettes")
+                             for nom in grille.index], rotation=0, fontsize=9)
+    plt.tight_layout()
+    return fig
+
+
 def exploration(data: pd.DataFrame):
     fig, axes = plt.subplots(2, 2, figsize=(13, 8))
 
@@ -72,6 +97,70 @@ def banc_essai(banc: pd.DataFrame, scores_par_bloc: dict):
     sns.boxplot(data=[scores_par_bloc[nom] for nom in ordre], orient="h", color=BLEU, ax=axes[1])
     axes[1].set_yticks(range(len(ordre)), ordre)
     axes[1].set(xlabel="AUC par bloc de validation croisée", title="Dispersion entre blocs")
+    plt.tight_layout()
+    return fig
+
+
+def particularites(resultat: dict):
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    budget = resultat["budget"] * 100
+    positions = range(len(budget))
+    axes[0].plot(positions, budget["observé"], marker="o", color="black", linewidth=2.5, label="observé")
+    for nom, couleur in [("régression logistique", ORANGE), ("forêt aléatoire", GRIS), ("gradient boosting", VERT)]:
+        axes[0].plot(positions, budget[nom], marker="o", color=couleur, label=nom)
+    axes[0].set_xticks(positions, [f"{valeur:.0f}" for valeur in budget.index])
+    axes[0].set(xlabel="budget médian de la tranche (M$, dollars 2023)", ylabel="% de films rentables",
+                title="Qui reproduit la forme en U du budget ?")
+    axes[0].legend()
+
+    manquants = resultat["manquants"]
+    hauteur = 0.38
+    rangs = np.arange(len(manquants))
+    axes[1].barh(rangs + hauteur / 2, manquants["films complets"], hauteur, color=BLEU, label="films complets")
+    axes[1].barh(rangs - hauteur / 2, manquants["films avec valeur manquante"], hauteur, color=ORANGE,
+                 label="films avec valeur manquante")
+    for rang, (complet, incomplet) in enumerate(zip(manquants["films complets"],
+                                                   manquants["films avec valeur manquante"])):
+        axes[1].text(complet + 0.003, rang + hauteur / 2, f"{complet:.3f}", va="center")
+        axes[1].text(incomplet + 0.003, rang - hauteur / 2, f"{incomplet:.3f}", va="center")
+    axes[1].set_yticks(rangs, manquants.index)
+    axes[1].set(xlim=(0.6, 0.8), xlabel="AUC en validation croisée",
+                title="Qui résiste aux valeurs manquantes ?")
+    axes[1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
+    plt.tight_layout()
+    return fig
+
+
+def apport(resultat: dict):
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), gridspec_kw={"width_ratios": [1, 1.15, 1]})
+    information = resultat["information"]
+    axes[0].bar(range(len(information)), information.values,
+                color=[GRIS] * (len(information) - 1) + [VERT])
+    axes[0].axhline(0.5, color=ROUGE, linestyle="--", label="hasard")
+    axes[0].set_xticks(range(len(information)), [nom.replace(" (", "\n(") for nom in information.index], fontsize=9)
+    axes[0].set(ylim=(0.45, 0.8), ylabel="AUC sur le test", title="Aucune variable seule ne suffit")
+    axes[0].legend(loc="upper left")
+    for position, valeur in enumerate(information.values):
+        axes[0].text(position, valeur + 0.006, f"{valeur:.3f}", ha="center")
+
+    regles = resultat["regles"]
+    base = regles["precision"].iloc[0] * 100
+    choix = regles.iloc[1:]
+    axes[1].bar(range(len(choix)), choix["precision"] * 100, color=[GRIS] * (len(choix) - 1) + [VERT])
+    axes[1].axhline(base, color=ROUGE, linestyle="--", label=f"tout le catalogue : {base:.0f} %")
+    axes[1].set_xticks(range(len(choix)), [nom.replace(" : ", "\n") for nom in choix.index], fontsize=9)
+    axes[1].set(ylim=(0, 90), ylabel="% de films rentables parmi les retenus", title="Le modèle face aux règles simples")
+    axes[1].legend(loc="upper left")
+    for position, (films, valeur) in enumerate(zip(choix["films retenus"], choix["precision"] * 100)):
+        axes[1].text(position, valeur + 1.5, f"{valeur:.0f} %\n{films} films", ha="center")
+
+    sagas = resultat["sagas"]
+    axes[2].bar(range(len(sagas)), sagas["taux_reel"] * 100, color=BLEU)
+    axes[2].set_xticks(range(len(sagas)), sagas.index, fontsize=9)
+    axes[2].set(ylim=(0, 90), xlabel="probabilité annoncée par le modèle", ylabel="% de sagas rentables",
+                title="Toutes les sagas ne se valent pas")
+    for position, (films, valeur) in enumerate(zip(sagas["films"], sagas["taux_reel"] * 100)):
+        axes[2].text(position, valeur + 1.5, f"{valeur:.0f} %\n{films} films", ha="center")
     plt.tight_layout()
     return fig
 
@@ -250,6 +339,31 @@ def zones_decision(probabilites, reel, seuil_rejet: float = 0.3, seuil_recommand
     axe.set(xlabel="probabilité de rentabilité estimée par le modèle", ylabel="films",
             title="Pourquoi une zone d'abstention : au milieu, le modèle ne tranche pas")
     axe.legend(loc="upper right", bbox_to_anchor=(1, 0.75))
+    plt.tight_layout()
+    return fig
+
+
+def probabilite_roi(diagnostic: pd.DataFrame, seuil_roi: float = 2.5, seuil_rejet: float = 0.3,
+                    seuil_recommandation: float = 0.7, tranches: int = 10):
+    """ROI réel de chaque film du test en fonction de la probabilité annoncée par le modèle."""
+    fig, axe = plt.subplots(figsize=(11, 5.5))
+    for rentable, couleur, nom in [(0, ROUGE, "non rentable"), (1, VERT, "rentable")]:
+        groupe = diagnostic[diagnostic["rentable"] == rentable]
+        axe.scatter(groupe["probabilite"], groupe["roi"], s=14, alpha=0.45, color=couleur, label=nom)
+
+    tranche = pd.qcut(diagnostic["probabilite"], tranches, duplicates="drop")
+    mediane = diagnostic.groupby(tranche, observed=True).agg(probabilite=("probabilite", "median"), roi=("roi", "median"))
+    axe.plot(mediane["probabilite"], mediane["roi"], color="black", marker="o", linewidth=2.5,
+             label="ROI médian par tranche de probabilité")
+
+    axe.axhline(seuil_roi, color=GRIS, linestyle="--", label=f"seuil de rentabilité : ROI = {seuil_roi}")
+    for seuil in (seuil_rejet, seuil_recommandation):
+        axe.axvline(seuil, color="black", linestyle=":", linewidth=1)
+    axe.set_yscale("log")
+    axe.set(xlim=(0, 1), xlabel="probabilité de rentabilité annoncée par le modèle",
+            ylabel="ROI réel (échelle logarithmique)",
+            title="Plus la probabilité annoncée est élevée, plus le ROI réel l'est aussi")
+    axe.legend(loc="upper left")
     plt.tight_layout()
     return fig
 

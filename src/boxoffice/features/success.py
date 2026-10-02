@@ -10,6 +10,8 @@ from boxoffice import config
 log = logging.getLogger(__name__)
 
 HIT_ROI = 2.5
+PART_STUDIO = 0.5
+PART_MARKETING = 0.25
 TOP_CAST = 3
 TOP_KEYWORDS = 50
 MAJORS = ("Paramount", "Universal", "Columbia", "Warner Bros", "20th Century", "Walt Disney",
@@ -18,6 +20,29 @@ MAJORS = ("Paramount", "Universal", "Columbia", "Warner Bros", "20th Century", "
 SAISONS = {1: "hiver", 2: "hiver", 3: "printemps", 4: "printemps", 5: "printemps", 6: "ete",
            7: "ete", 8: "ete", 9: "rentree", 10: "automne", 11: "fin_annee", 12: "fin_annee"}
 FUITE = ("revenue", "revenue_2023", "roi", "vote_average", "vote_count", "popularity", "n_ratings")
+
+
+def point_mort(part_studio: float = PART_STUDIO, marketing: float = PART_MARKETING) -> float:
+    """Multiple du budget à atteindre en recettes pour que le studio couvre production et marketing."""
+    return (1 + marketing) / part_studio
+
+
+def grille_point_mort(parts_studio=(0.50, 0.45, 0.40), marketings=(0.0, 0.25, 0.50)) -> pd.DataFrame:
+    grille = pd.DataFrame({f"marketing = {100 * m:.0f} % du budget": [point_mort(p, m) for p in parts_studio]
+                           for m in marketings},
+                          index=[f"le studio touche {100 * p:.0f} % des recettes" for p in parts_studio])
+    return grille.round(2)
+
+
+def resultat_studio(multiples=(1, 1.5, 2, 2.5, 3, 4), budget: float = 100,
+                    part_studio: float = PART_STUDIO, marketing: float = PART_MARKETING) -> pd.DataFrame:
+    """Résultat du studio, en millions, pour un film de budget donné selon le ROI atteint en salles."""
+    lignes = [{"ROI": multiple, "recettes en salles": multiple * budget,
+               "part du studio": part_studio * multiple * budget,
+               "production": budget, "marketing": marketing * budget,
+               "résultat du studio": part_studio * multiple * budget - budget - marketing * budget}
+              for multiple in multiples]
+    return pd.DataFrame(lignes).set_index("ROI")
 
 
 def films_du_modele() -> pd.DataFrame:

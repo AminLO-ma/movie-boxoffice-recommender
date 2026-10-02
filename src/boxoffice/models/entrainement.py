@@ -1,6 +1,7 @@
 """Expériences du modèle de succès : préparation, banc d'essai, réglage, évaluation, seuils."""
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
@@ -9,8 +10,8 @@ from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (accuracy_score, brier_score_loss, confusion_matrix, f1_score,
                              precision_score, recall_score, roc_auc_score)
-from sklearn.model_selection import (RandomizedSearchCV, StratifiedKFold, cross_val_score,
-                                     cross_validate, learning_curve)
+from sklearn.model_selection import (RandomizedSearchCV, StratifiedKFold, cross_val_predict,
+                                     cross_val_score, cross_validate, learning_curve)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.tree import DecisionTreeClassifier
@@ -87,6 +88,61 @@ def banc_essai(jeu: dict, modeles: dict | None = None) -> tuple[pd.DataFrame, di
                           "fit time (s)": mesures["fit_time"].mean()})
     banc = pd.DataFrame(resultats).set_index("modèle").sort_values("AUC", ascending=False)
     return banc, scores_par_bloc
+
+
+def sensibilite_seuil(data: pd.DataFrame, jeu: dict, seuils=(1.0, 1.5, 2.0, 2.5, 3.0), retenus: int = 120) -> pd.DataFrame:
+    """Réentraîne le modèle pour plusieurs définitions du succès et compare ce qu'il apprend et ce qu'il recommande."""
+    roi = np.exp(data["log_roi"])
+    train, test = jeu["X"].loc[jeu["i_train"]], jeu["X"].loc[jeu["i_test"]]
+    roi_test = roi[jeu["i_test"]].values
+    lignes = []
+    for seuil in seuils:
+        cible = (roi >= seuil).astype(int)
+        modele = HistGradientBoostingClassifier(categorical_features=jeu["indices_categoriels"], random_state=42)
+        modele.fit(train, cible[jeu["i_train"]])
+        probabilites = modele.predict_proba(test)[:, 1]
+        importance = permutation_importance(modele, test, cible[jeu["i_test"]], scoring="roc_auc",
+                                            n_repeats=5, random_state=42)
+        premieres = pd.Series(importance.importances_mean, index=jeu["variables"]).nlargest(3).index
+        meilleurs = np.argsort(-probabilites)[:retenus]
+        lignes.append({"seuil ROI": seuil,
+                       "part de succès %": 100 * cible.mean(),
+                       "AUC test": roc_auc_score(cible[jeu["i_test"]], probabilites),
+                       "3 premières variables": ", ".join(premieres),
+                       f"ROI médian des {retenus} films les mieux classés": np.median(roi_test[meilleurs]),
+                       "dont films à perte %": 100 * (roi_test[meilleurs] < 1).mean()})
+    return pd.DataFrame(lignes).set_index("seuil ROI")
+
+
+def particularites(jeu: dict, tranches: int = 10) -> dict:
+    """Ce qui distingue les familles : forme de l'effet budget et tenue face aux valeurs manquantes."""
+    X, y = jeu["X"].loc[jeu["i_train"]], jeu["y"][jeu["i_train"]]
+    cv = validation_croisee()
+    probabilites = {nom: cross_val_predict(modele, X, y, cv=cv, method="predict_proba")[:, 1]
+                    for nom, modele in candidats(jeu).items()}
+
+    tranche = pd.qcut(X["log_budget"], tranches, labels=False)
+    budget = pd.DataFrame({"budget médian (M$)": np.exp(X["log_budget"]).groupby(tranche).median() / 1e6,
+                           "observé": y.groupby(tranche).mean()})
+    for nom, valeurs in probabilites.items():
+        budget[nom] = pd.Series(valeurs, index=X.index).groupby(tranche).mean()
+
+    incomplet = X.isna().any(axis=1).values
+    manquants = pd.DataFrame([
+        {"modèle": nom,
+         "films complets": roc_auc_score(y[~incomplet], valeurs[~incomplet]),
+         "films avec valeur manquante": roc_auc_score(y[incomplet], valeurs[incomplet])}
+        for nom, valeurs in probabilites.items()
+    ]).set_index("modèle")
+    manquants["écart"] = manquants["films avec valeur manquante"] - manquants["films complets"]
+
+    seuls = {"régression logistique": Pipeline([("echelle", StandardScaler()), ("modele", LogisticRegression())]),
+             "gradient boosting": HistGradientBoostingClassifier(random_state=42)}
+    budget_seul = {nom: cross_val_score(modele, X[["log_budget"]], y, cv=cv, scoring="roc_auc").mean()
+                   for nom, modele in seuls.items()}
+    return {"budget": budget.set_index("budget médian (M$)"), "manquants": manquants, "budget_seul": budget_seul,
+            "part_incomplets": incomplet.mean(),
+            "taux_manquants": X.isna().mean().loc[lambda s: s > 0.001].sort_values(ascending=False)}
 
 
 def comparer_acp(jeu: dict, variance_cible: float = 0.95) -> dict:
@@ -215,6 +271,35 @@ def importance_variables(modele, jeu: dict, repetitions: int = 10) -> pd.Series:
     return pd.Series(mesure.importances_mean, index=jeu["variables"]).sort_values(ascending=False)
 
 
+def explication_shap(modele, jeu: dict, reference: int = 100):
+    """Valeurs SHAP par permutation, en probabilité : TreeExplainer ne lit pas les catégories natives du modèle."""
+    import shap
+
+    fond = shap.maskers.Independent(jeu["X"].loc[jeu["i_train"]], max_samples=reference)
+    explicateur = shap.explainers.Permutation(lambda matrice: modele.predict_proba(matrice)[:, 1], fond,
+                                              feature_names=jeu["variables"], seed=42)
+    return explicateur(jeu["X"].loc[jeu["i_test"]], silent=True)
+
+
+def sens_des_effets(explication, jeu: dict) -> pd.DataFrame:
+    """Compare, variable par variable, le sens de l'effet selon SHAP et selon la régression logistique."""
+    test = jeu["X"].loc[jeu["i_test"]]
+    coefficients = coefficients_logistique(jeu)
+    lignes = []
+    for rang, nom in enumerate(jeu["variables"]):
+        connu = test[nom].notna().values
+        if nom in CATEGORIELLES or test.loc[connu, nom].nunique() < 2:
+            continue
+        lien = np.corrcoef(test.loc[connu, nom], explication.values[connu, rang])[0, 1]
+        lignes.append({"variable": nom,
+                       "poids SHAP (points)": 100 * np.abs(explication.values[:, rang]).mean(),
+                       "sens gradient boosting": "+" if lien > 0 else "-",
+                       "sens régression logistique": "+" if coefficients[nom] > 0 else "-"})
+    table = pd.DataFrame(lignes).set_index("variable").sort_values("poids SHAP (points)", ascending=False)
+    table["accord"] = table["sens gradient boosting"] == table["sens régression logistique"]
+    return table
+
+
 def coefficients_logistique(jeu: dict) -> pd.Series:
     modele = Pipeline([("prep", preparation_colonnes(jeu["numeriques"])),
                        ("modele", LogisticRegression(max_iter=2000))])
@@ -246,6 +331,41 @@ def controle_fuite(data: pd.DataFrame, jeu: dict) -> pd.DataFrame:
         {"variables utilisées": "+ nombre de votes et popularité", "AUC": auc_avec(variables + ["vote_count", "popularity"])},
         {"variables utilisées": "+ recettes", "AUC": auc_avec(variables + ["revenue_2023"])},
     ]).set_index("variables utilisées")
+
+
+def apport_modele(modele, data: pd.DataFrame, jeu: dict, probabilites: np.ndarray,
+                  seuil: float = SEUIL_RECOMMANDATION, gros_budget: float = 100) -> dict:
+    """Compare le modèle à des règles simples sur le test : information utilisée, précision, tri des sagas."""
+    train, test = jeu["X"].loc[jeu["i_train"]], jeu["X"].loc[jeu["i_test"]]
+    reel = jeu["y"][jeu["i_test"]].values
+    roi = np.exp(data.loc[jeu["i_test"], "log_roi"].values)
+    budget = np.exp(test["log_budget"].values) / 1e6
+    saga = test["is_franchise"].values == 1
+
+    information = {}
+    for nom, colonnes in [("budget seul", ["log_budget"]), ("saga seule", ["is_franchise"]),
+                          ("budget et saga", ["log_budget", "is_franchise"])]:
+        reduit = clone(modele).set_params(categorical_features=None)
+        reduit.fit(train[colonnes], jeu["y"][jeu["i_train"]])
+        information[nom] = roc_auc_score(reel, reduit.predict_proba(test[colonnes])[:, 1])
+    information[f"{len(jeu['variables'])} variables (modèle)"] = roc_auc_score(reel, probabilites)
+
+    selections = {"tout le catalogue": np.ones(len(reel), dtype=bool),
+                  f"règle : budget supérieur à {gros_budget:.0f} M$": budget > gros_budget,
+                  "règle : toutes les sagas": saga,
+                  f"modèle : probabilité au-dessus de {seuil}": probabilites >= seuil}
+    regles = pd.DataFrame([
+        {"sélection": nom, "films retenus": int(masque.sum()), "precision": reel[masque].mean(),
+         "ROI médian": np.median(roi[masque]), "part de films à perte (ROI < 1)": (roi[masque] < 1).mean()}
+        for nom, masque in selections.items()
+    ]).set_index("sélection")
+
+    zones_sagas = pd.cut(probabilites[saga], [0, SEUIL_REJET, 0.5, seuil, 1.0],
+                         labels=[f"sous {SEUIL_REJET}", f"{SEUIL_REJET} à 0.5", f"0.5 à {seuil}", f"au-dessus de {seuil}"])
+    sagas = pd.DataFrame({"zone": zones_sagas, "rentable": reel[saga]}).groupby("zone", observed=True).agg(
+        films=("rentable", "size"), taux_reel=("rentable", "mean"))
+    return {"information": pd.Series(information, name="AUC"), "regles": regles, "sagas": sagas,
+            "sagas_recommandees": int((saga & (probabilites >= seuil)).sum())}
 
 
 def _codes_categories(data: pd.DataFrame) -> dict:
